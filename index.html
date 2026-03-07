@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SafeRoute — Chicago</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<style>
+  /* ── RESET & VARIABLES ─────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #080b0f;
+    --panel:     #0d1117;
+    --border:    #1e2730;
+    --amber:     #f5a623;
+    --red:       #e63946;
+    --green:     #2dc653;
+    --blue:      #4895ef;
+    --text:      #c9d1d9;
+    --muted:     #4a5568;
+    --fastest:   #e63946;
+    --balanced:  #4895ef;
+    --safest:    #2dc653;
+  }
+
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); }
+
+  body {
+    font-family: 'Space Mono', monospace;
+    color: var(--text);
+    display: flex;
+  }
+
+  /* ── SIDEBAR ───────────────────────────────────────── */
+  #sidebar {
+    width: 360px;
+    min-width: 360px;
+    height: 100vh;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    z-index: 1000;
+    overflow: hidden;
+  }
+
+  /* Header */
+  #header {
+    padding: 24px 20px 18px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  #header::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--amber), var(--red), transparent);
+  }
+  .logo {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 22px;
+    letter-spacing: -0.5px;
+    color: #fff;
+  }
+  .logo span { color: var(--amber); }
+  .tagline {
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  /* Status pill */
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .status-text { font-size: 10px; color: var(--muted); letter-spacing: 1px; }
+
+  /* Form area */
+  #form-area {
+    padding: 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .field-label {
+    font-size: 9px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+
+  .coord-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  input[type="number"], input[type="text"] {
+    width: 100%;
+    background: #111820;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    padding: 9px 10px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input:focus { border-color: var(--amber); }
+  input::placeholder { color: #2a3240; }
+
+  /* Hour slider */
+  .hour-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  input[type="range"] {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--amber);
+    cursor: pointer;
+    box-shadow: 0 0 8px var(--amber);
+  }
+  #hour-display {
+    font-size: 12px;
+    color: var(--amber);
+    min-width: 42px;
+    text-align: right;
+  }
+
+  /* Route button */
+  #route-btn {
+    width: 100%;
+    padding: 12px;
+    background: var(--amber);
+    color: #000;
+    border: none;
+    border-radius: 4px;
+    font-family: 'Syne', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  #route-btn:hover { background: #ffc14d; transform: translateY(-1px); }
+  #route-btn:active { transform: translateY(0); }
+  #route-btn.loading {
+    pointer-events: none;
+    opacity: 0.7;
+  }
+  #route-btn.loading::after {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%;
+    width: 100%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    animation: shimmer 1s infinite;
+  }
+  @keyframes shimmer {
+    to { left: 100%; }
+  }
+
+  /* Map controls */
+  .layer-toggle {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .toggle-btn {
+    padding: 5px 12px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+  .toggle-btn.active-fastest  { border-color: var(--fastest);  color: var(--fastest);  background: rgba(230,57,70,0.1); }
+  .toggle-btn.active-balanced { border-color: var(--balanced); color: var(--balanced); background: rgba(72,149,239,0.1); }
+  .toggle-btn.active-safest   { border-color: var(--safest);   color: var(--safest);   background: rgba(45,198,83,0.1); }
+  .toggle-btn.active-clusters { border-color: var(--amber);    color: var(--amber);    background: rgba(245,166,35,0.1); }
+
+  /* Results */
+  #results {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  #results::-webkit-scrollbar { width: 4px; }
+  #results::-webkit-scrollbar-track { background: transparent; }
+  #results::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 12px;
+    opacity: 0.3;
+  }
+  .empty-icon { font-size: 36px; }
+  .empty-text { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; }
+
+  /* Route card */
+  .route-card {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+    animation: slideIn 0.3s ease forwards;
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  @keyframes slideIn {
+    to { opacity: 1; transform: translateX(0); }
+  }
+  .route-card:nth-child(1) { animation-delay: 0.05s; }
+  .route-card:nth-child(2) { animation-delay: 0.10s; }
+  .route-card:nth-child(3) { animation-delay: 0.15s; }
+
+  .route-card.fastest  { border-left: 3px solid var(--fastest);  }
+  .route-card.balanced { border-left: 3px solid var(--balanced); }
+  .route-card.safest   { border-left: 3px solid var(--safest);   }
+  .route-card:hover { background: #111820; }
+  .route-card.selected { background: #111820; }
+
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .route-name {
+    font-family: 'Syne', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .fastest  .route-name { color: var(--fastest);  }
+  .balanced .route-name { color: var(--balanced); }
+  .safest   .route-name { color: var(--safest);   }
+
+  .route-dist {
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  /* Safety bar */
+  .safety-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+  .safety-val { font-size: 11px; }
+  .fastest  .safety-val { color: var(--fastest);  }
+  .balanced .safety-val { color: var(--balanced); }
+  .safest   .safety-val { color: var(--safest);   }
+
+  .bar-track {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .fastest  .bar-fill { background: var(--fastest);  }
+  .balanced .bar-fill { background: var(--balanced); }
+  .safest   .bar-fill { background: var(--safest);   }
+
+  /* Error */
+  #error-msg {
+    display: none;
+    background: rgba(230, 57, 70, 0.1);
+    border: 1px solid var(--red);
+    border-radius: 4px;
+    padding: 10px 12px;
+    font-size: 10px;
+    color: var(--red);
+    letter-spacing: 0.5px;
+  }
+
+  /* Click-to-set instruction */
+  #click-hint {
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-align: center;
+    padding: 8px 0 0;
+  }
+
+  /* ── MAP ───────────────────────────────────────────── */
+  #map {
+    flex: 1;
+    height: 100vh;
+  }
+
+  /* Custom Leaflet controls */
+  .leaflet-control-attribution { display: none; }
+  .leaflet-bar a {
+    background: var(--panel) !important;
+    color: var(--text) !important;
+    border-color: var(--border) !important;
+  }
+  .leaflet-bar a:hover { background: #1e2730 !important; }
+
+  /* Cluster tooltip */
+  .cluster-tooltip {
+    background: var(--panel);
+    border: 1px solid var(--amber);
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--text);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+</style>
+</head>
+<body>
+
+<!-- ── SIDEBAR ──────────────────────────────────────── -->
+<div id="sidebar">
+  <div id="header">
+    <div class="logo">Safe<span>Route</span></div>
+    <div class="tagline">Crime-Aware Navigation · Chicago</div>
+    <div class="status-row">
+      <div class="dot" id="api-dot" style="background:var(--muted);box-shadow:none;"></div>
+      <div class="status-text" id="api-status">CONNECTING...</div>
+    </div>
+  </div>
+
+  <div id="form-area">
+    <!-- Start -->
+    <div>
+      <div class="field-label">Origin</div>
+      <div class="coord-row">
+        <input type="number" id="start-lat" placeholder="Lat  41.8827" step="0.0001"/>
+        <input type="number" id="start-lon" placeholder="Lon -87.6233" step="0.0001"/>
+      </div>
+    </div>
+
+    <!-- End -->
+    <div>
+      <div class="field-label">Destination</div>
+      <div class="coord-row">
+        <input type="number" id="end-lat" placeholder="Lat  41.9100" step="0.0001"/>
+        <input type="number" id="end-lon" placeholder="Lon -87.6770" step="0.0001"/>
+      </div>
+    </div>
+
+    <!-- Hour -->
+    <div>
+      <div class="field-label">Time of Day</div>
+      <div class="hour-row">
+        <input type="range" id="hour-slider" min="0" max="23" value="12"/>
+        <span id="hour-display">12:00</span>
+      </div>
+    </div>
+
+    <div id="error-msg"></div>
+    <button id="route-btn" onclick="getRoutes()">▶ CALCULATE ROUTES</button>
+    <div id="click-hint">💡 Click map to set origin / destination</div>
+  </div>
+
+  <!-- Layer toggles -->
+  <div class="layer-toggle">
+    <button class="toggle-btn active-fastest"  id="tog-fastest"  onclick="toggleLayer('fastest')">Fastest</button>
+    <button class="toggle-btn active-balanced" id="tog-balanced" onclick="toggleLayer('balanced')">Balanced</button>
+    <button class="toggle-btn active-safest"   id="tog-safest"   onclick="toggleLayer('safest')">Safest</button>
+    <button class="toggle-btn active-clusters" id="tog-clusters" onclick="toggleClusters()">Clusters</button>
+  </div>
+
+  <!-- Results -->
+  <div id="results">
+    <div class="empty-state">
+      <div class="empty-icon">🗺</div>
+      <div class="empty-text">Set points & calculate</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MAP ──────────────────────────────────────────── -->
+<div id="map"></div>
+
+<script>
+const API = 'http://127.0.0.1:8000';
+
+// ── MAP INIT ────────────────────────────────────────────
+const map = L.map('map', { zoomControl: false }).setView([41.8781, -87.6298], 13);
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  maxZoom: 19
+}).addTo(map);
+
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+// ── STATE ───────────────────────────────────────────────
+let routeLayers  = { fastest: null, balanced: null, safest: null };
+let clusterLayer = null;
+let startMarker  = null;
+let endMarker    = null;
+let clickMode    = 'start'; // alternates start → end → start
+
+const routeVisible   = { fastest: true, balanced: true, safest: true };
+let   clustersVisible = true;
+let   routeData      = null;
+
+// Route styles
+const styles = {
+  fastest:  { color: '#e63946', weight: 4, opacity: 0.85, dashArray: null },
+  balanced: { color: '#4895ef', weight: 4, opacity: 0.85, dashArray: null },
+  safest:   { color: '#2dc653', weight: 4, opacity: 0.85, dashArray: null },
+};
+
+// Custom markers
+function makeMarker(lat, lon, type) {
+  const color = type === 'start' ? '#f5a623' : '#e63946';
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="
+      width:14px;height:14px;
+      background:${color};
+      border:2px solid #fff;
+      border-radius:50%;
+      box-shadow:0 0 12px ${color};
+    "></div>`,
+    iconAnchor: [7, 7],
+  });
+  return L.marker([lat, lon], { icon });
+}
+
+// ── CLICK TO SET POINTS ────────────────────────────────
+map.on('click', function(e) {
+  const { lat, lng } = e.latlng;
+
+  if (clickMode === 'start') {
+    document.getElementById('start-lat').value = lat.toFixed(5);
+    document.getElementById('start-lon').value = lng.toFixed(5);
+    if (startMarker) map.removeLayer(startMarker);
+    startMarker = makeMarker(lat, lng, 'start').addTo(map);
+    clickMode = 'end';
+    document.getElementById('click-hint').textContent = '📍 Now click to set destination';
+  } else {
+    document.getElementById('end-lat').value = lat.toFixed(5);
+    document.getElementById('end-lon').value = lng.toFixed(5);
+    if (endMarker) map.removeLayer(endMarker);
+    endMarker = makeMarker(lat, lng, 'end').addTo(map);
+    clickMode = 'start';
+    document.getElementById('click-hint').textContent = '💡 Click map to update origin';
+  }
+});
+
+// ── HOUR SLIDER ─────────────────────────────────────────
+document.getElementById('hour-slider').addEventListener('input', function() {
+  const h = parseInt(this.value);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12  = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  document.getElementById('hour-display').textContent =
+    `${String(h12).padStart(2,'0')}:00 ${ampm}`;
+});
+
+// ── HEALTH CHECK ────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const res = await fetch(`${API}/health`);
+    if (res.ok) {
+      const d = await res.json();
+      document.getElementById('api-dot').style.cssText =
+        'background:var(--green);box-shadow:0 0 6px var(--green);';
+      document.getElementById('api-status').textContent =
+        `API ONLINE · ${d.clusters} CLUSTERS`;
+      loadClusters();
+    }
+  } catch {
+    document.getElementById('api-status').textContent = 'API OFFLINE';
+  }
+}
+
+// ── LOAD CLUSTERS ───────────────────────────────────────
+async function loadClusters() {
+  try {
+    const res  = await fetch(`${API}/clusters`);
+    const data = await res.json();
+
+    if (clusterLayer) map.removeLayer(clusterLayer);
+    clusterLayer = L.layerGroup();
+
+    data.clusters.forEach(c => {
+      const r = Math.max(80, Math.min(c.radius_m, 600));
+
+      // Outer glow ring
+      L.circle([c.lat, c.lon], {
+        radius:      r * 1.4,
+        color:       '#f5a623',
+        fillColor:   '#f5a623',
+        fillOpacity: 0.03,
+        weight:      0,
+      }).addTo(clusterLayer);
+
+      // Main circle
+      const circle = L.circle([c.lat, c.lon], {
+        radius:      r,
+        color:       '#e63946',
+        fillColor:   '#e63946',
+        fillOpacity: Math.min(0.18, c.intensity * 0.25),
+        weight:      1,
+        opacity:     0.5,
+      });
+
+      circle.bindTooltip(`
+        <div class="cluster-tooltip">
+          <div style="color:#f5a623;font-weight:bold;margin-bottom:4px">
+            ⚠ DANGER CLUSTER #${c.id}
+          </div>
+          <div>Intensity: ${(c.intensity * 100).toFixed(0)}%</div>
+          <div>Crime pts: ${c.size}</div>
+          <div>Peak hour: ${c.peak_hour}:00</div>
+          <div>Avg severity: ${c.avg_severity.toFixed(1)}/10</div>
+        </div>
+      `, { className: '', sticky: true });
+
+      circle.addTo(clusterLayer);
+    });
+
+    clusterLayer.addTo(map);
+  } catch(e) {
+    console.warn('Clusters failed:', e);
+  }
+}
+
+// ── GET ROUTES ──────────────────────────────────────────
+async function getRoutes() {
+  const btn = document.getElementById('route-btn');
+  const err = document.getElementById('error-msg');
+  err.style.display = 'none';
+
+  const sl = parseFloat(document.getElementById('start-lat').value);
+  const so = parseFloat(document.getElementById('start-lon').value);
+  const el = parseFloat(document.getElementById('end-lat').value);
+  const eo = parseFloat(document.getElementById('end-lon').value);
+  const hour = parseInt(document.getElementById('hour-slider').value);
+
+  if ([sl, so, el, eo].some(isNaN)) {
+    showError('Please set origin and destination coordinates.');
+    return;
+  }
+
+  btn.classList.add('loading');
+  btn.textContent = '⟳ ROUTING...';
+
+  try {
+    const res = await fetch(`${API}/route`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        start_lat: sl, start_lon: so,
+        end_lat:   el, end_lon:   eo,
+        hour
+      })
+    });
+
+    if (!res.ok) {
+      const d = await res.json();
+      throw new Error(d.detail || 'Routing failed');
+    }
+
+    routeData = await res.json();
+    drawRoutes(routeData);
+    showResults(routeData);
+
+  } catch(e) {
+    showError(e.message);
+  } finally {
+    btn.classList.remove('loading');
+    btn.textContent = '▶ CALCULATE ROUTES';
+  }
+}
+
+// ── DRAW ROUTES ─────────────────────────────────────────
+function drawRoutes(data) {
+  // Reset toggle buttons — show all 3 on fresh calculation
+  ['fastest', 'balanced', 'safest'].forEach(n => {
+    routeVisible[n] = true;
+    const btn = document.getElementById(`tog-${n}`);
+    btn.className = `toggle-btn active-${n}`;
+  });
+
+  ['fastest', 'balanced', 'safest'].forEach(name => {
+    if (routeLayers[name]) {
+      map.removeLayer(routeLayers[name]);
+      routeLayers[name] = null;
+    }
+    if (!data[name]) return;
+
+    const coords = data[name].coordinates;
+    const line = L.polyline(coords, {
+      ...styles[name],
+      weight: 4.5,
+    });
+
+    // Hover thicken
+    line.on('mouseover', function() { this.setStyle({ weight: 7 }); });
+    line.on('mouseout',  function() { this.setStyle({ weight: 4.5 }); });
+
+    routeLayers[name] = line;
+    if (routeVisible[name]) line.addTo(map);
+  });
+
+  // Fit map to safest or fastest route
+  const ref = data.safest || data.fastest;
+  if (ref) {
+    map.fitBounds(L.polyline(ref.coordinates).getBounds(), { padding: [40, 40] });
+  }
+}
+
+// ── SHOW RESULTS ────────────────────────────────────────
+function showResults(data) {
+  const container = document.getElementById('results');
+  container.innerHTML = '';
+
+  const configs = [
+    { name: 'fastest',  label: '⚡ Fastest',  cls: 'fastest'  },
+    { name: 'balanced', label: '⚖ Balanced', cls: 'balanced' },
+    { name: 'safest',   label: '🛡 Safest',   cls: 'safest'   },
+  ];
+
+  configs.forEach(({ name, label, cls }) => {
+    const r = data[name];
+    if (!r) return;
+
+    const dist_km = (r.total_length_m / 1000).toFixed(2);
+    const score   = r.safety_score;
+
+    const card = document.createElement('div');
+    card.className = `route-card ${cls}`;
+    card.id = `card-${name}`;
+    card.innerHTML = `
+      <div class="card-header">
+        <div class="route-name">${label}</div>
+        <div class="route-dist">${dist_km} km</div>
+      </div>
+      <div class="safety-label">
+        <span>Safety Score</span>
+        <span class="safety-val">${score}/100</span>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill" id="bar-${name}" style="width:0%"></div>
+      </div>
+    `;
+
+    card.addEventListener('click', () => focusRoute(name));
+    container.appendChild(card);
+
+    // Animate bar after render
+    setTimeout(() => {
+      document.getElementById(`bar-${name}`).style.width = `${score}%`;
+    }, 50);
+  });
+}
+
+// ── FOCUS ROUTE (highlight on click) ────────────────────
+function focusRoute(name) {
+  ['fastest', 'balanced', 'safest'].forEach(n => {
+    document.getElementById(`card-${n}`)?.classList.remove('selected');
+    if (routeLayers[n]) routeLayers[n].setStyle({ weight: 4.5, opacity: 0.5 });
+  });
+  document.getElementById(`card-${name}`)?.classList.add('selected');
+  if (routeLayers[name]) routeLayers[name].setStyle({ weight: 7, opacity: 1 });
+}
+
+// ── TOGGLE LAYERS ───────────────────────────────────────
+function toggleLayer(name) {
+  // Radio behaviour: selecting a route hides the other two
+  const wasActive = routeVisible[name];
+
+  // If already the only one active, do nothing (always keep one visible)
+  const anyOtherVisible = ['fastest','balanced','safest']
+    .filter(n => n !== name)
+    .some(n => routeVisible[n]);
+  if (wasActive && !anyOtherVisible) return;
+
+  // Hide all route layers
+  ['fastest', 'balanced', 'safest'].forEach(n => {
+    routeVisible[n] = false;
+    document.getElementById(`tog-${n}`)
+      .className = 'toggle-btn'; // remove active class
+    if (routeLayers[n]) map.removeLayer(routeLayers[n]);
+  });
+
+  // Show only the clicked one
+  routeVisible[name] = true;
+  document.getElementById(`tog-${name}`)
+    .classList.add(`active-${name}`);
+  if (routeLayers[name]) routeLayers[name].addTo(map);
+}
+
+function toggleClusters() {
+  clustersVisible = !clustersVisible;
+  const btn = document.getElementById('tog-clusters');
+  if (clustersVisible) {
+    btn.classList.add('active-clusters');
+    if (clusterLayer) clusterLayer.addTo(map);
+  } else {
+    btn.classList.remove('active-clusters');
+    if (clusterLayer) map.removeLayer(clusterLayer);
+  }
+}
+
+// ── ERROR ───────────────────────────────────────────────
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = '⚠ ' + msg;
+  el.style.display = 'block';
+}
+
+// ── BOOT ────────────────────────────────────────────────
+checkHealth();
+</script>
+</body>
+</html>
