@@ -22,10 +22,6 @@ Safety scores update dynamically based on **time of day** — a route that score
 
 ![SafeRoute Screenshot](screenshot.png)
 
-- Dark map with **red danger clusters** overlaid (HDBSCAN crime hotspots)
-- Three colour-coded routes: red (fastest), blue (balanced), green (safest)
-- Live safety score bars with time-of-day slider
-
 ---
 
 ## How It Works
@@ -50,8 +46,6 @@ Chicago Crime CSV (2001–Present)
 
 ### A\* Cost Function
 
-The core routing uses a **proportional danger penalty**:
-
 ```python
 cost = length × (1 + danger^1.5 × time_multiplier × safety_weight)
 ```
@@ -74,61 +68,61 @@ saferoute/
 └── README.md
 ```
 
-> **Generated files (not in repo — see Setup below):**
-> `chicago_crimes_clean.csv`, `chicago_clusters.json`, `chicago_safety_graph.graphml`
-
 ---
 
-## Setup & Running
+## ⚡ Quick Setup & Run
 
-### 1. Clone the repo
+### Step 1 — Clone the repo
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/saferoute.git
-cd saferoute
+git clone https://github.com/Yashwardhan2/safe-route.git
+cd safe-route
 ```
 
-### 2. Install dependencies
+### Step 2 — Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Download the crime dataset
+### Step 3 — Download the prebuilt data files
 
-1. Go to [Chicago Data Portal — Crimes 2001 to Present](https://data.cityofchicago.org/Public-Safety/Crimes-2001-to-Present/ijzp-q8t2)
-2. Click **Export → CSV**
-3. Save as `Crimes_-_2001_to_Present.csv` in the project folder
+These files are too large for GitHub. Download and place them in the project root folder.
 
-### 4. Run the data pipeline
+📁 **[Download chicago_safety_graph.graphml + chicago_clusters.json from Google Drive](https://drive.google.com/drive/folders/1NPMAbZPd_lqyIjMvjXXdRVu7uQ7cuaPB?usp=drive_link)**
 
-Open `analysis.ipynb` in Jupyter and run all cells top to bottom. This generates:
-- `chicago_crimes_clean.csv`
-- `chicago_clusters.json`
-- `chicago_safety_graph.graphml`
+After downloading, your folder should look like:
+```
+safe-route/
+├── chicago_safety_graph.graphml   ← downloaded
+├── chicago_clusters.json          ← downloaded
+├── main.py
+├── index.html
+├── requirements.txt
+└── README.md
+```
 
-> ⏱ HDBSCAN clustering on 80k sampled points takes ~3–5 minutes.
+### Step 4 — Start the backend
 
-### 5. Start the backend
+Open a terminal in the project folder and run:
 
 ```bash
 uvicorn main:app --reload --port 8000
 ```
 
-You should see:
+Wait until you see **both** lines appear:
 ```
 ✅ Graph loaded: 42,XXX nodes, 98,XXX edges
 ✅ Clusters loaded: 85 clusters
 ```
 
-### 6. Open the frontend
+> ⚠ Keep this terminal running. Do not close it.
 
-Simply open `index.html` in your browser:
-```
-file:///path/to/saferoute/index.html
-```
+### Step 5 — Open the frontend
 
-The sidebar will show **API ONLINE · 85 CLUSTERS** when connected.
+Double-click `index.html` to open it in your browser.
+
+The sidebar will show **🟢 API ONLINE · 85 CLUSTERS** when connected successfully.
 
 ---
 
@@ -138,7 +132,19 @@ The sidebar will show **API ONLINE · 85 CLUSTERS** when connected.
 2. **Click again** to set your destination (red dot)
 3. **Drag the time slider** to simulate different hours of the day
 4. Click **▶ CALCULATE ROUTES**
-5. Toggle between Fastest / Balanced / Safest using the layer buttons
+5. Toggle Fastest / Balanced / Safest using the layer buttons
+6. Hover over red circles to see danger cluster details
+
+---
+
+## Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| `API OFFLINE` in sidebar | Make sure `uvicorn` is still running in terminal |
+| `FileNotFoundError: chicago_safety_graph.graphml` | Download from Drive link above, place in project root |
+| `ModuleNotFoundError` | Run `pip install -r requirements.txt` again |
+| Blank map / routes not showing | Check terminal for errors, ensure port 8000 is free |
 
 ---
 
@@ -186,21 +192,29 @@ The sidebar will show **API ONLINE · 85 CLUSTERS** when connected.
 }
 ```
 
-Returns fastest, balanced, and safest route coordinates with safety scores.
-
 ### `GET /clusters`
-Returns all HDBSCAN danger cluster centres, sizes, and intensities for the heatmap overlay.
+Returns all HDBSCAN danger cluster centres, sizes, and intensities.
 
 ### `GET /health`
-Returns API status, graph node/edge count, and cluster count.
+Returns API status, node/edge count, and cluster count.
+
+---
+
+## Want to Regenerate the Data from Scratch?
+
+1. Download crime data from [Chicago Data Portal](https://data.cityofchicago.org/Public-Safety/Crimes-2001-to-Present/ijzp-q8t2) → Export → CSV
+2. Save as `Crimes_-_2001_to_Present.csv` in the project root
+3. Open `analysis.ipynb` in Jupyter and run all cells
+
+> ⏱ Takes ~10–15 minutes total.
 
 ---
 
 ## Limitations
 
-- Graph and clusters are precomputed for **Chicago only**
+- Precomputed for **Chicago only**
 - Crime data accuracy depends on Chicago PD reporting
-- Routing is optimized for **walking** (speed assumption: 5 km/h)
+- Optimized for **walking** (5 km/h assumption)
 - Does not account for real-time incidents
 
 ---
