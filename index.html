@@ -420,7 +420,21 @@
     </div>
 
     <div id="error-msg"></div>
-    <button id="route-btn" onclick="getRoutes()">▶ CALCULATE ROUTES</button>
+    <div style="display:flex;gap:8px;">
+      <button id="route-btn" onclick="getRoutes()" style="flex:1">▶ CALCULATE ROUTES</button>
+      <button id="reset-btn" onclick="resetAll()" style="
+        padding:12px 14px;
+        background:transparent;
+        border:1px solid var(--border);
+        border-radius:4px;
+        color:var(--muted);
+        font-family:'Space Mono',monospace;
+        font-size:13px;
+        cursor:pointer;
+        transition:all 0.2s;
+      " onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'"
+         onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">✕ RESET</button>
+    </div>
     <div id="click-hint">💡 Click map to set origin / destination</div>
   </div>
 
@@ -448,7 +462,18 @@
 const API = 'http://127.0.0.1:8000';
 
 // ── MAP INIT ────────────────────────────────────────────
-const map = L.map('map', { zoomControl: false }).setView([41.8781, -87.6298], 13);
+// Chicago bounding box
+const CHICAGO_BOUNDS = L.latLngBounds(
+  [41.60, -87.95],  // SW corner
+  [42.05, -87.45]   // NE corner
+);
+
+const map = L.map('map', {
+  zoomControl: false,
+  maxBounds: CHICAGO_BOUNDS,
+  maxBoundsViscosity: 1.0,
+  minZoom: 11,
+}).setView([41.8781, -87.6298], 13);
 
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
   maxZoom: 19
@@ -494,6 +519,17 @@ function makeMarker(lat, lon, type) {
 // ── CLICK TO SET POINTS ────────────────────────────────
 map.on('click', function(e) {
   const { lat, lng } = e.latlng;
+
+  // Reject clicks outside Chicago land area (blocks Lake Michigan etc.)
+  if (!CHICAGO_BOUNDS.contains([lat, lng])) {
+    showError('Please click within Chicago city limits.');
+    return;
+  }
+  // Also block clicks in Lake Michigan (east of shore ~-87.52)
+  if (lng > -87.515) {
+    showError('That point is in Lake Michigan — please click on land.');
+    return;
+  }
 
   if (clickMode === 'start') {
     document.getElementById('start-lat').value = lat.toFixed(5);
@@ -680,6 +716,41 @@ function showResults(data) {
   const container = document.getElementById('results');
   container.innerHTML = '';
 
+  // ── Smart status message ───────────────────────────────
+  const msgBox = document.createElement('div');
+  msgBox.style.cssText = `
+    padding: 10px 12px;
+    border-radius: 4px;
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+    border: 1px solid;
+  `;
+  const fastestScore = data.fastest?.safety_score ?? 100;
+  const isDangerous  = fastestScore < 50;
+
+  if (data.already_safe) {
+    // genuinely safe — green
+    msgBox.style.borderColor = 'var(--green)';
+    msgBox.style.background  = 'rgba(45,198,83,0.08)';
+    msgBox.style.color       = 'var(--green)';
+    msgBox.textContent       = '✓ ' + data.message;
+  } else if (isDangerous && !data.already_safe) {
+    // dangerous with no good alternative — red
+    msgBox.style.borderColor = 'var(--red)';
+    msgBox.style.background  = 'rgba(230,57,70,0.08)';
+    msgBox.style.color       = 'var(--red)';
+    msgBox.textContent       = '🚨 ' + data.message;
+  } else {
+    // safer alternative found — amber
+    msgBox.style.borderColor = 'var(--amber)';
+    msgBox.style.background  = 'rgba(245,166,35,0.08)';
+    msgBox.style.color       = 'var(--amber)';
+    msgBox.textContent       = '⚠ ' + data.message;
+  }
+  container.appendChild(msgBox);
+
+  // ── Route cards ───────────────────────────────────────
   const configs = [
     { name: 'fastest',  label: '⚡ Fastest',  cls: 'fastest'  },
     { name: 'balanced', label: '⚖ Balanced', cls: 'balanced' },
@@ -693,13 +764,38 @@ function showResults(data) {
     const dist_km = (r.total_length_m / 1000).toFixed(2);
     const score   = r.safety_score;
 
+    // Extra time label
+    const extra    = r.extra_minutes || 0;
+    const extraTxt = name === 'fastest'
+      ? '<span style="color:var(--muted);font-size:9px">BASELINE</span>'
+      : extra <= 0.5
+        ? '<span style="color:var(--green);font-size:9px">+~0 min</span>'
+        : `<span style="color:var(--amber);font-size:9px">+${extra} min</span>`;
+
+    // Danger avoided badge
+    const dangerBadge = (name !== 'fastest' && r.danger_avoided)
+      ? `<div style="font-size:8px;color:var(--green);
+                     letter-spacing:1px;margin-top:3px">
+           ✓ AVOIDS DANGER ZONES
+         </div>`
+      : '';
+
     const card = document.createElement('div');
     card.className = `route-card ${cls}`;
     card.id = `card-${name}`;
+
+    // ── COMPLETE card.innerHTML (no placeholders) ────────
     card.innerHTML = `
       <div class="card-header">
-        <div class="route-name">${label}</div>
-        <div class="route-dist">${dist_km} km</div>
+        <div>
+          <div class="route-name">${label}</div>
+          ${dangerBadge}
+        </div>
+        <div style="display:flex;flex-direction:column;
+                    align-items:flex-end;gap:2px">
+          <div class="route-dist">${dist_km} km</div>
+          <div>${extraTxt}</div>
+        </div>
       </div>
       <div class="safety-label">
         <span>Safety Score</span>
@@ -715,7 +811,8 @@ function showResults(data) {
 
     // Animate bar after render
     setTimeout(() => {
-      document.getElementById(`bar-${name}`).style.width = `${score}%`;
+      const bar = document.getElementById(`bar-${name}`);
+      if (bar) bar.style.width = `${score}%`;
     }, 50);
   });
 }
@@ -773,6 +870,41 @@ function showError(msg) {
   const el = document.getElementById('error-msg');
   el.textContent = '⚠ ' + msg;
   el.style.display = 'block';
+}
+
+// ── RESET ALL ───────────────────────────────────────────
+function resetAll() {
+  // Clear route lines
+  ['fastest', 'balanced', 'safest'].forEach(n => {
+    if (routeLayers[n]) { map.removeLayer(routeLayers[n]); routeLayers[n] = null; }
+    routeVisible[n] = true;
+    const btn = document.getElementById(`tog-${n}`);
+    if (btn) btn.className = `toggle-btn active-${n}`;
+  });
+
+  // Clear markers
+  if (startMarker) { map.removeLayer(startMarker); startMarker = null; }
+  if (endMarker)   { map.removeLayer(endMarker);   endMarker   = null; }
+
+  // Clear inputs
+  ['start-lat','start-lon','end-lat','end-lon'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+
+  // Reset results panel
+  document.getElementById('results').innerHTML = `
+    <div class="empty-state">
+      <div class="empty-icon">🗺</div>
+      <div class="empty-text">Set points & calculate</div>
+    </div>`;
+
+  // Reset error + hint
+  document.getElementById('error-msg').style.display = 'none';
+  document.getElementById('click-hint').textContent = '💡 Click map to set origin / destination';
+
+  // Reset click mode
+  clickMode = 'start';
+  routeData = null;
 }
 
 // ── BOOT ────────────────────────────────────────────────

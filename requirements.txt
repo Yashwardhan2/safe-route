@@ -1,0 +1,10 @@
+fastapi==0.111.0
+uvicorn==0.30.1
+osmnx==1.9.3
+hdbscan==0.8.38.post1
+numpy==1.26.4
+pandas==2.2.2
+scikit-learn==1.5.0
+pydantic==2.7.1
+httpx==0.27.0
+matplotlib==3.9.0
